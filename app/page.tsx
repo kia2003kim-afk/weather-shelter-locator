@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
  
+
+import { useState } from "react";
+
 // 1. PTY 변수 타입 정의 (0: 화창, 1: 비, 2: 눈, 3: 흐림)
 type PTYType = 0 | 1 | 2 | 3;
  
@@ -24,6 +27,10 @@ export default function WeatherShelterPage() {
     setUserName(null);
   };
  
+  const [temp, setTemp] = useState(9); // 현재 기온 예시
+  const [pty, setPty] = useState<PTYType>(0); // 현재 PTY 상태 관리
+  const [showDetail, setShowDetail] = useState(false);
+
   // 온도별 배경색 설정
   const getBgColor = (t: number) => {
     if (t >= 33) return "from-red-600 to-red-800";
@@ -33,6 +40,7 @@ export default function WeatherShelterPage() {
     return "from-blue-700 to-indigo-900";
   };
  
+
   // PTY와 온도를 조합하여 상세 데이터 반환
   const getStatusData = (t: number, p: PTYType) => {
     const ptyData = {
@@ -42,6 +50,7 @@ export default function WeatherShelterPage() {
       3: { title: "흐림", icon: "https://cdn-icons-png.flaticon.com/128/1146/1146869.png" },
     };
  
+
     let desc = "";
     if (t >= 33) desc = "극심한 폭염입니다! 야외 활동을 중단하세요.";
     else if (t >= 25) desc = "무더운 날씨입니다. 수분을 충분히 섭취하세요.";
@@ -49,6 +58,7 @@ export default function WeatherShelterPage() {
     else if (t >= 0)  desc = "쌀쌀한 날씨입니다. 옷차림에 신경 쓰세요.";
     else desc = "강력한 한파입니다! 체온 유지에 유의하세요.";
  
+
     return {
       title: ptyData[p].title,
       iconUrl: ptyData[p].icon,
@@ -61,6 +71,7 @@ export default function WeatherShelterPage() {
   return (
     <div className="max-w-md mx-auto bg-emerald-50 min-h-screen pb-24 font-sans text-gray-900 shadow-2xl relative">
      
+      
       {/* 상단 헤더 */}
       <header className="flex justify-between items-center p-4 bg-white/95 backdrop-blur-sm border-b sticky top-0 z-10">
         <div className="flex items-center gap-2">
@@ -80,6 +91,7 @@ export default function WeatherShelterPage() {
             로그인
           </button>
         )}
+        <button className="text-gray-500 p-2 hover:bg-emerald-100 rounded-full transition">⚙️</button>
       </header>
  
       {/* 메인 날씨 카드 */}
@@ -92,13 +104,14 @@ export default function WeatherShelterPage() {
             </div>
           </div>
          
+          
           <div className="flex flex-col gap-2 items-end">
             <div className="flex gap-1">
               <button onClick={() => setTemp(temp - 5)} className="bg-white/20 px-2 py-1 rounded text-xs active:scale-95 transition">-5°</button>
               <button onClick={() => setTemp(temp + 5)} className="bg-white/20 px-2 py-1 rounded text-xs active:scale-95 transition">+5°</button>
             </div>
             <select
-              value={pty}
+              value={pty} 
               onChange={(e) => setPty(Number(e.target.value) as PTYType)}
               className="bg-white/20 text-xs px-2 py-1 rounded text-white border-none outline-none appearance-none cursor-pointer"
             >
@@ -125,7 +138,7 @@ export default function WeatherShelterPage() {
           <WeatherInfoItem label="습도" value={pty === 1 ? "90%" : "45%"} icon="💧" />
           <WeatherInfoItem label="풍속" value={pty === 2 ? "6.5m/s" : "2.1m/s"} icon="🚩" />
           <WeatherInfoItem label="미세먼지" value="보통" icon="💨" />
-          <button
+          <button 
             onClick={() => setShowDetail(true)}
             className="bg-white/20 p-4 rounded-2xl border border-white/10 backdrop-blur-sm hover:bg-white/30 transition flex flex-col items-start"
           >
@@ -136,6 +149,7 @@ export default function WeatherShelterPage() {
           </button>
         </div>
  
+
         {/* 그래프 섹션 */}
         <div className="mt-8 pt-6 border-t border-white/20">
           <p className="text-[11px] font-bold text-white/80 mb-4">일일 기온 변화</p>
@@ -152,6 +166,7 @@ export default function WeatherShelterPage() {
           </div>
         </div>
       </section>
+
       {/* 📍 [수정된 메인 버튼] 큼직한 버튼 섹션 */}
       <section className="px-4 mt-12 mb-12">
         <button
@@ -185,6 +200,14 @@ export default function WeatherShelterPage() {
         />
       </nav>
  
+
+      {/* 하단 네비게이션 */}
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t border-emerald-100 flex justify-around py-3">
+        <NavItem label="지도" icon="🗺️" active={false} />
+        <NavItem label="홈" icon="🏠" active={true} />
+        <NavItem label="로그인" icon="👤" active={false} />
+      </nav>
+
       {/* 내일 날씨 모달 창 */}
       {showDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
@@ -214,6 +237,7 @@ export default function WeatherShelterPage() {
   );
 }
  
+
 // --- 하위 컴포넌트 ---
 function WeatherInfoItem({ label, value, icon }: { label: string, value: string, icon: string }) {
   return (
