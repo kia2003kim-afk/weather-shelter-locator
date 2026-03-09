@@ -1,14 +1,28 @@
 "use client";
  
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
  
 // 1. PTY 변수 타입 정의 (0: 화창, 1: 비, 2: 눈, 3: 흐림)
 type PTYType = 0 | 1 | 2 | 3;
  
 export default function WeatherShelterPage() {
-  const [temp, setTemp] = useState(9); // 현재 기온 예시
-  const [pty, setPty] = useState<PTYType>(0); // 현재 PTY 상태 관리
+  const router = useRouter();
+  const [temp, setTemp] = useState(9);
+  const [pty, setPty] = useState<PTYType>(0);
   const [showDetail, setShowDetail] = useState(false);
+
+  // ✅ 로그인 상태
+  const [userName, setUserName] = useState<string | null>(null);
+  useEffect(() => {
+    const saved = sessionStorage.getItem('userName');
+    if (saved) setUserName(saved);
+  }, []);
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('userName');
+    setUserName(null);
+  };
  
   // 온도별 배경색 설정
   const getBgColor = (t: number) => {
@@ -53,7 +67,19 @@ export default function WeatherShelterPage() {
           <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">O</div>
           <h1 className="font-bold text-lg">쉴라잡이</h1>
         </div>
-        <button className="text-gray-500 p-2 hover:bg-emerald-100 rounded-full transition">⚙️</button>
+        {/* ✅ 로그인 상태에 따라 버튼 변경 */}
+        {userName ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-gray-700">{userName}님 👋</span>
+            <button onClick={handleLogout} className="text-xs px-3 py-1.5 bg-red-50 text-red-500 rounded-full border border-red-200 font-bold">
+              로그아웃
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => router.push('/login')} className="text-xs px-4 py-2 bg-green-600 text-white rounded-full font-bold">
+            로그인
+          </button>
+        )}
       </header>
  
       {/* 메인 날씨 카드 */}
@@ -148,9 +174,14 @@ export default function WeatherShelterPage() {
  
       {/* 하단 네비게이션 */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t border-emerald-100 flex justify-around py-3">
-        <NavItem label="지도" icon="🗺️" active={false} />
-        <NavItem label="홈" icon="🏠" active={true} />
-        <NavItem label="로그인" icon="👤" active={false} />
+        <NavItem label="지도" icon="🗺️" active={false} onClick={() => alert("지도 준비 중")} />
+        <NavItem label="홈" icon="🏠" active={true} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
+        <NavItem
+          label={userName ? `${userName}` : "로그인"}
+          icon="👤"
+          active={!!userName}
+          onClick={() => userName ? handleLogout() : router.push('/login')}
+        />
       </nav>
  
       {/* 내일 날씨 모달 창 */}
@@ -194,12 +225,11 @@ function WeatherInfoItem({ label, value, icon }: { label: string, value: string,
   );
 }
  
-function NavItem({ label, icon, active }: { label: string, icon: string, active: boolean }) {
+function NavItem({ label, icon, active, onClick }: { label: string, icon: string, active: boolean, onClick?: () => void }) {
   return (
-    <button className={`flex flex-col items-center gap-1 flex-1 ${active ? 'text-green-700' : 'text-gray-400'}`}>
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 flex-1 ${active ? 'text-green-700' : 'text-gray-400'}`}>
       <span className="text-xl">{icon}</span>
       <span className="text-[10px] font-bold">{label}</span>
     </button>
   );
- 
 }
