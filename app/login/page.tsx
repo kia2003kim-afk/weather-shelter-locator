@@ -26,14 +26,18 @@ export default function LoginPage() {
     userid: '', password: '', name: '', address: '', birthyear: ''
   });
 
+  
+
   // ✅ /api/login 호출 → function_app.py의 login 함수
   const handleLogin = async () => {
     setError(''); setSuccess(''); setLoading(true);
     try {
-      const res = await fetch('/api/login', {
+      const hashedPw = await sha256(loginForm.password);
+
+      const res = await fetch('https://3dt-1st-project-4th-fx-hbdzardjfyg9cgcq.koreacentral-01.azurewebsites.net/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginForm),
+        body: JSON.stringify( {userid: loginForm.userid, password: hashedPw }),
       });
       const data = await res.json();
 
