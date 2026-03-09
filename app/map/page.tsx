@@ -378,34 +378,32 @@ export default function MapNavigation() {
     document.head.appendChild(script);
     
 
-    // useEffect 내의 script.onload 부분
-script.onload = () => {
-  window.kakao.maps.load(() => {
-    if (!mapContainer.current) return;
-    
-    // 1. 지도 인스턴스 생성
-    mapInstance.current = new window.kakao.maps.Map(mapContainer.current, { 
-      center: new window.kakao.maps.LatLng(37.5665, 126.978), 
-      level: 4 
-    });
-
-    // 2. 데이터 가져오기 (성공했던 로직 그대로)
-    fetch("https://3dt-1st-project-4th-fx-hbdzardjfyg9cgcq.koreacentral-01.azurewebsites.net/api/shelters")
-      .then((res) => res.json())
-      .then((data) => {
-        console.log("데이터 확인:", data); // 마커가 안 뜨면 이걸 먼저 보세요!
+    script.onload = () => {
+      window.kakao.maps.load(() => {
+        if (!mapContainer.current) return;
         
-        // 데이터가 배열인지 확인하고 마커 함수 호출
-        const items = Array.isArray(data) ? data : [];
-        if (items.length > 0) {
-          initMarkers(items);
-        } else {
-          console.warn("데이터가 비어있습니다.");
-        }
-      })
-      .catch(err => console.error("API 로딩 실패:", err));
-  });
-};
+        console.log("카카오 맵 로딩 완료!"); // 확인용 로그
+
+        mapInstance.current = new window.kakao.maps.Map(mapContainer.current, { 
+          center: new window.kakao.maps.LatLng(37.5665, 126.978), 
+          level: 4 
+        });
+
+        fetch("https://3dt-1st-project-4th-fx-hbdzardjfyg9cgcq.koreacentral-01.azurewebsites.net/api/shelters")
+          .then((res) => res.json())
+          .then((data) => {
+            console.log("데이터 확인:", data);
+            const items = Array.isArray(data) ? data : [];
+            if (items.length > 0) {
+              initMarkers(items);
+            }
+          })
+          .catch(err => console.error("API 로딩 실패:", err));
+      });
+    };
+
+    // ✅ 2. 마지막에 head에 추가해야 안전하게 실행됩니다.
+    document.head.appendChild(script);
 
     return () => {
       window.removeEventListener("offline", handleOffline);
