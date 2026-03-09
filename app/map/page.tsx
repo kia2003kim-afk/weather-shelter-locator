@@ -1,4 +1,6 @@
-'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-empty-object-type */
+"use client";
 import React, { useEffect, useRef, useState } from "react";
 
 declare global {
@@ -7,16 +9,148 @@ declare global {
     confetti: any;
   }
 }
+type ConfettiFn = (options: {
+  particleCount: number;
+  spread: number;
+  origin: { y: number };
+  zIndex: number;
+}) => void;
+
+interface KakaoSize {}
+interface KakaoPoint {}
+
+interface KakaoLatLng {
+  getLat(): number;
+  getLng(): number;
+}
+
+interface KakaoLatLngBounds {
+  extend(position: KakaoLatLng): void;
+}
+
+interface KakaoMap {
+  setCenter(position: KakaoLatLng): void;
+  setBounds(bounds: KakaoLatLngBounds): void;
+}
+
+interface KakaoMarker {
+  setPosition(position: KakaoLatLng): void;
+}
+
+interface KakaoPolyline {
+  getPath(): KakaoLatLng[];
+  setMap(map: KakaoMap | null): void;
+}
+
+interface KakaoInfoWindow {
+  open(map: KakaoMap, marker: KakaoMarker): void;
+  close(): void;
+}
+
+interface KakaoMapsApi {
+  LatLng: new (lat: number, lng: number) => KakaoLatLng;
+  Map: new (
+    container: HTMLElement,
+    options: { center: KakaoLatLng; level: number },
+  ) => KakaoMap;
+  Marker: new (options: {
+    position: KakaoLatLng;
+    map: KakaoMap | null;
+    image?: unknown;
+  }) => KakaoMarker;
+  MarkerImage: new (
+    src: string,
+    size: KakaoSize,
+    options?: { offset: KakaoPoint },
+  ) => unknown;
+  Size: new (width: number, height: number) => KakaoSize;
+  Point: new (x: number, y: number) => KakaoPoint;
+  Polyline: new (options: {
+    path: KakaoLatLng[];
+    strokeWeight: number;
+    strokeColor: string;
+    strokeOpacity: number;
+  }) => KakaoPolyline;
+  LatLngBounds: new () => KakaoLatLngBounds;
+  InfoWindow: new (options: {
+    content: HTMLElement;
+    removable: boolean;
+  }) => KakaoInfoWindow;
+  event: {
+    addListener(target: unknown, eventName: string, handler: () => void): void;
+  };
+  load(callback: () => void): void;
+}
+
+type AppWindow = Window & {
+  kakao: { maps: KakaoMapsApi };
+  confetti?: ConfettiFn;
+};
+
+interface Shelter {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+interface RouteStep {
+  lat: number;
+  lng: number;
+  instruction: string;
+}
+
+interface NavigationState {
+  myMarker: KakaoMarker | null;
+  polyline: KakaoPolyline | null;
+  routeSteps: RouteStep[];
+  lastSpokenStep: number;
+  watchId: number | null;
+  isArrived: boolean;
+  isRerouting: boolean;
+  currentEndLat: number;
+  currentEndLng: number;
+  currentShelterName: string;
+  openedInfowindows: KakaoInfoWindow[];
+  selectedVoice: SpeechSynthesisVoice | null;
+}
+
+interface OsrmStep {
+  distance: number;
+  maneuver: {
+    type: string;
+    modifier?: string;
+    location: [number, number];
+  };
+}
+
+interface OsrmRoute {
+  distance: number;
+  geometry: {
+    coordinates: [number, number][];
+  };
+  legs: Array<{
+    steps: OsrmStep[];
+  }>;
+}
+
+interface OsrmResponse {
+  code: string;
+  routes: OsrmRoute[];
+}
+const appWindow =
+  typeof window !== "undefined"
+    ? (window as unknown as AppWindow)
+    : ({} as AppWindow);
 
 export default function MapNavigation() {
-  const mapContainer = useRef<any>(null);
-  const mapInstance = useRef<any>(null);
-  const [subtitle, setSubtitle] = useState<any>("주변 쉼터를 찾는 중...");
-  const [fontSize, setFontSize] = useState<any>(20);
-  const [showWelcome, setShowWelcome] = useState<any>(true);
-  const [isOffline, setIsOffline] = useState<any>(false);
+  const mapContainer = useRef<HTMLDivElement | null>(null);
+  const mapInstance = useRef<KakaoMap | null>(null);
+  const [subtitle, setSubtitle] = useState<string>("주변 쉼터를 찾는 중...");
+  const [fontSize, setFontSize] = useState<number>(20);
+  const [showWelcome, setShowWelcome] = useState<boolean>(true);
+  const [isOffline, setIsOffline] = useState<boolean>(false);
 
-  const state = useRef<any>({
+  const state = useRef<NavigationState>({
     myMarker: null,
     polyline: null,
     routeSteps: [],
@@ -28,7 +162,7 @@ export default function MapNavigation() {
     currentEndLng: 0,
     currentShelterName: "",
     openedInfowindows: [],
-    selectedVoice: null as any,
+    selectedVoice: null,
   });
 
   const arrowImage =
@@ -38,9 +172,10 @@ export default function MapNavigation() {
     if (typeof window === 'undefined') return;
     const voices = window.speechSynthesis.getVoices();
     state.current.selectedVoice =
-      voices.find((v: any) => v.name.includes("Google") && v.lang === "ko-KR") ||
-      voices.find((v: any) => v.name.includes("Yuna") && v.lang === "ko-KR") ||
-      voices.find((v: any) => v.lang === "ko-KR" || v.lang.includes("ko"));
+      voices.find((v) => v.name.includes("Google") && v.lang === "ko-KR") ||
+      voices.find((v) => v.name.includes("Yuna") && v.lang === "ko-KR") ||
+      voices.find((v) => v.lang === "ko-KR" || v.lang.includes("ko")) ||
+      null;
   };
 
   const speak = (text: string) => {
@@ -61,21 +196,33 @@ export default function MapNavigation() {
     window.speechSynthesis.speak(msg);
   };
 
-  const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+  const getDistance = (
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lng2 - lng1) * (Math.PI / 180);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) ** 2;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) ** 2;
     return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))) * 1000;
   };
 
   const startApp = () => {
     if (!mapInstance.current || !window.kakao || !window.kakao.maps) return;
     setShowWelcome(false);
+    const map = mapInstance.current;
+    if (!map) return;
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
         const locPos = new window.kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-        mapInstance.current.setCenter(locPos);
+        mapInstance.current?.setCenter(locPos);
         if (!state.current.myMarker) {
           state.current.myMarker = new window.kakao.maps.Marker({
             position: locPos, 
@@ -108,14 +255,14 @@ export default function MapNavigation() {
         state.current.isArrived = true;
         speak(`${state.current.currentShelterName}에 잘 도착하셨습니다. 안내를 종료합니다.`);
         if (window.confetti) window.confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, zIndex: 10001 });
-        navigator.geolocation.clearWatch(state.current.watchId);
+        navigator.geolocation.clearWatch(state.current?.watchId??0);
         return;
       }
 
       if (state.current.polyline && !state.current.isRerouting) {
         const path = state.current.polyline.getPath();
         let minDistance = Infinity;
-        path.forEach((p: any) => {
+        path.forEach((p) => {
           const d = getDistance(curLat, curLng, p.getLat(), p.getLng());
           if (d < minDistance) minDistance = d;
         });
@@ -125,23 +272,46 @@ export default function MapNavigation() {
           findRoute(state.current.currentEndLat, state.current.currentEndLng, state.current.currentShelterName);
           return;
         }
-      }
 
-      for (let i = 0; i < state.current.routeSteps.length; i++) {
-        if (i <= state.current.lastSpokenStep) continue;
-        const step = state.current.routeSteps[i];
-        if (getDistance(curLat, curLng, step.lat, step.lng) < 40) {
-          state.current.lastSpokenStep = i;
-          const nextStep = state.current.routeSteps[i + 1] ? ` 그 다음은 ${state.current.routeSteps[i + 1].instruction}` : "";
-          speak(`이제 ${step.instruction}${nextStep}`);
-          break;
+        if (state.current.polyline && !state.current.isRerouting) {
+          const path = state.current.polyline.getPath();
+          let minDistance = Infinity;
+          path.forEach((p) => {
+            const d = getDistance(curLat, curLng, p.getLat(), p.getLng());
+            if (d < minDistance) minDistance = d;
+          });
+          if (minDistance > 50) {
+            state.current.isRerouting = true;
+            speak("경로를 벗어났습니다. 현재 위치에서 다시 길을 찾습니다.");
+            findRoute(
+              state.current.currentEndLat,
+              state.current.currentEndLng,
+              state.current.currentShelterName,
+            );
+            return;
+          }}
         }
-      }
-    }, null, { enableHighAccuracy: true });
+
+        for (let i = 0; i < state.current.routeSteps.length; i++) {
+          if (i <= state.current.lastSpokenStep) continue;
+          const step = state.current.routeSteps[i];
+          if (getDistance(curLat, curLng, step.lat, step.lng) < 40) {
+            state.current.lastSpokenStep = i;
+            const nextStep = state.current.routeSteps[i + 1]
+              ? ` 그 다음은 ${state.current.routeSteps[i + 1].instruction}`
+              : "";
+            speak(`이제 ${step.instruction}${nextStep}`);
+            break;
+          }
+        }
+      },
+      null,
+      { enableHighAccuracy: true },
+    );
   };
 
   const findRoute = (endLat: number, endLng: number, shelterName: string) => {
-    state.current.openedInfowindows.forEach((iw: any) => iw.close());
+    state.current.openedInfowindows.forEach((iw) => iw.close());
     state.current.openedInfowindows = [];
     if (state.current.watchId !== null) {
       navigator.geolocation.clearWatch(state.current.watchId);
@@ -168,31 +338,34 @@ export default function MapNavigation() {
           const route = data.routes[0];
           const linePath = route.geometry.coordinates.map((c: any) => new window.kakao.maps.LatLng(c[1], c[0]));
           state.current.polyline = new window.kakao.maps.Polyline({ path: linePath, strokeWeight: 8, strokeColor: "#3301fc", strokeOpacity: 0.8 });
-          state.current.polyline.setMap(mapInstance.current);
-          route.legs[0].steps.forEach((step: any) => {
+          state.current.polyline?.setMap(mapInstance.current);
+          route.legs[0].steps.forEach((step:any) => {
             const m = step.maneuver;
             if (m.modifier && (m.modifier.includes("u-turn") || m.modifier.includes("sharp"))) return;
             const dist = Math.round(step.distance);
-            let stepText = m.type === "depart" ? "안내를 시작합니다. " : m.type === "arrive" ? "목적지 근처에 도착했습니다. " : `${dist > 10 ? dist + "미터 직진 후 " : ""}${m.modifier === "left" ? "왼쪽으로 꺾으세요" : m.modifier === "right" ? "오른쪽으로 꺾으세요" : "앞으로 이동하세요"}`;
+            const stepText = m.type === "depart" ? "안내를 시작합니다. " : m.type === "arrive" ? "목적지 근처에 도착했습니다. " : `${dist > 10 ? dist + "미터 직진 후 " : ""}${m.modifier === "left" ? "왼쪽으로 꺾으세요" : m.modifier === "right" ? "오른쪽으로 꺾으세요" : "앞으로 이동하세요"}`;
             state.current.routeSteps.push({ lat: m.location[1], lng: m.location[0], instruction: stepText });
           });
           const bounds = new window.kakao.maps.LatLngBounds();
           linePath.forEach((p: any) => bounds.extend(p));
-          mapInstance.current.setBounds(bounds);
+          mapInstance.current?.setBounds(bounds);
           if (!state.current.isRerouting) {
             const duration = Math.ceil(route.distance / 50);
             speak(`${shelterName}까지 안내를 시작합니다. 약 ${duration}분 정도 걸립니다.`);
           }
-          state.current.isRerouting = false;
-          startTracking();
-        }
-      });
+        }});
     });
   };
 
   useEffect(() => {
-    const handleOffline = () => { setIsOffline(true); speak("인터넷 연결이 끊어졌습니다."); };
-    const handleOnline = () => { setIsOffline(false); speak("인터넷이 다시 연결되었습니다."); };
+    const handleOffline = () => {
+      setIsOffline(true);
+      speak("인터넷 연결이 끊어졌습니다.");
+    };
+    const handleOnline = () => {
+      setIsOffline(false);
+      speak("인터넷이 다시 연결되었습니다.");
+    };
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
     
@@ -238,6 +411,7 @@ script.onload = () => {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const initMarkers = (arr: any[]) => {
@@ -280,24 +454,58 @@ script.onload = () => {
   return (
     <div style={{ width: "100%", height: "100vh", position: "relative" }}>
       {showWelcome && (
-        <div style={(welcomeLayerStyle as any)}>
+        <div style={welcomeLayerStyle as any}>
           <div style={{ fontSize: "80px", marginBottom: "20px" }}>🔊</div>
           <h1 style={{ fontSize: "30px" }}>반갑습니다!</h1>
-          <p style={{ fontSize: "22px" }}>안내를 위해 <b>소리를 크게</b> 키워주세요.</p>
-          <button onClick={startApp} style={confirmButtonStyle}>확인했습니다</button>
+          <p style={{ fontSize: "22px" }}>
+            안내를 위해 <b>소리를 크게</b> 키워주세요.
+          </p>
+          <button onClick={startApp} style={confirmButtonStyle}>
+            확인했습니다
+          </button>
         </div>
       )}
       <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
-      <div style={(uiWrapperStyle as any)}>
+      <div style={uiWrapperStyle as any}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <button onClick={() => speak(subtitle.replace(/<br>/g, ""))} style={buttonStyle}>🔄 다시듣기</button>
+          <button
+            onClick={() => speak(subtitle.replace(/<br>/g, ""))}
+            style={buttonStyle}
+          >
+            🔄 다시듣기
+          </button>
           <div style={{ display: "flex", gap: "5px" }}>
-            <button onClick={() => setFontSize((f: number) => Math.min(36, f + 4))} disabled={isPlusDisabled} style={{ ...subButtonStyle, backgroundColor: isPlusDisabled ? "#e0e0e0" : "white" }}>글자 +</button>
-            <button onClick={() => setFontSize((f: number) => Math.max(16, f - 4))} disabled={isMinusDisabled} style={{ ...subButtonStyle, backgroundColor: isMinusDisabled ? "#e0e0e0" : "white" }}>글자 -</button>
+            <button
+              onClick={() => setFontSize((f) => Math.min(36, f + 4))}
+              disabled={isPlusDisabled}
+              style={{
+                ...subButtonStyle,
+                backgroundColor: isPlusDisabled ? "#e0e0e0" : "white",
+              }}
+            >
+              글자 +
+            </button>
+            <button
+              onClick={() => setFontSize((f) => Math.max(16, f - 4))}
+              disabled={isMinusDisabled}
+              style={{
+                ...subButtonStyle,
+                backgroundColor: isMinusDisabled ? "#e0e0e0" : "white",
+              }}
+            >
+              글자 -
+            </button>
           </div>
         </div>
-        <div style={{ ...subtitleBoxStyle, fontSize: `${fontSize}px`, backgroundColor: isOffline ? 
-        "rgba(200, 0, 0, 0.9)" : "rgba(0, 0, 0, 0.85)" } as any}>
+        <div
+          style={{
+            ...subtitleBoxStyle,
+            fontSize: `${fontSize}px`,
+            backgroundColor: isOffline
+              ? "rgba(200, 0, 0, 0.9)"
+              : "rgba(0, 0, 0, 0.85)",
+          } as any}
+        >
           <span dangerouslySetInnerHTML={{ __html: `🔊 ${subtitle}` }} />
         </div>
       </div>
