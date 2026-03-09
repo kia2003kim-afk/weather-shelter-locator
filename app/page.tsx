@@ -155,6 +155,7 @@ export default function WeatherShelterPage() {
       {/* 📍 [수정된 메인 버튼] 큼직한 버튼 섹션 */}
       <section className="px-4 mt-12 mb-12">
         <button
+          onClick={() => router.push('/map')}
           className="w-full group relative overflow-hidden bg-white rounded-3xl p-8 shadow-[0_20px_50px_rgba(16,185,129,0.15)] border-2 border-emerald-100 active:scale-[0.98] transition-all duration-300"
         >
           {/* 배경 꾸미기용 원형 요소 */}
