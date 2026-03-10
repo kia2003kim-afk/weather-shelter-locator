@@ -43,6 +43,7 @@ export default function LoginPage() {
 
       if (res.ok && data.username) {
         sessionStorage.setItem('userName', data.username);
+        sessionStorage.setItem('userId', loginForm.userid);
         setSuccess(`${data.username}님, 환영합니다! 🎉`);
         setTimeout(() => router.push('/'), 1200);
       } else {

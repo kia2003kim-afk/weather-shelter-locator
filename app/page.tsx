@@ -5,27 +5,217 @@ import { useRouter } from "next/navigation";
 
 type PTYType = 0 | 1 | 2 | 3;
 
+const BASE_URL = "https://3dt-1st-project-4th-fx-hbdzardjfyg9cgcq.koreacentral-01.azurewebsites.net/api";
+
+const SEOUL_DISTRICTS = [
+  '강남구', '강동구', '강북구', '강서구', '관악구',
+  '광진구', '구로구', '금천구', '노원구', '도봉구',
+  '동대문구', '동작구', '마포구', '서대문구', '서초구',
+  '성동구', '성북구', '송파구', '양천구', '영등포구',
+  '용산구', '은평구', '종로구', '중구', '중랑구',
+];
+
+// ✅ 추가: 꺾은선 그래프 컴포넌트
+function TempLineChart({ points }: { points: { label: string; temp: number }[] }) {
+  if (!points || points.length < 2) return null;
+
+  const width = 280;
+  const height = 90;
+  const paddingX = 24;
+  const paddingY = 22;
+
+  const temps = points.map((p) => p.temp);
+  const minTemp = Math.min(...temps);
+  const maxTemp = Math.max(...temps);
+  const range = maxTemp - minTemp || 1;
+
+  const toX = (i: number) =>
+    paddingX + (i / (points.length - 1)) * (width - paddingX * 2);
+  const toY = (t: number) =>
+    paddingY + ((maxTemp - t) / range) * (height - paddingY * 2);
+
+  const pathD = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p.temp)}`)
+    .join(" ");
+
+  const fillD =
+    pathD +
+    ` L ${toX(points.length - 1)} ${height} L ${toX(0)} ${height} Z`;
+
+  return (
+    <div className="mt-5 px-1">
+      <p className="text-xs text-white font-bold mb-3 tracking-wider">
+        📈 일일 체감 온도 변화
+      </p>
+      <div className="bg-black/30 rounded-2xl px-3 pt-3 pb-5 border border-white/10">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          width="100%"
+          height={height}
+          className="overflow-visible"
+        >
+          <defs>
+            <linearGradient id="tempGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(52,211,153,0.45)" />
+              <stop offset="100%" stopColor="rgba(52,211,153,0.02)" />
+            </linearGradient>
+          </defs>
+
+          <path d={fillD} fill="url(#tempGrad)" />
+
+          <path
+            d={pathD}
+            fill="none"
+            stroke="#34d399"
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+
+          {points.map((p, i) => {
+            const cx = toX(i);
+            const cy = toY(p.temp);
+            const isFirst = i === 0;
+            return (
+              <g key={i}>
+                <circle cx={cx} cy={cy} r={isFirst ? 9 : 7} fill="rgba(52,211,153,0.15)" />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={isFirst ? 5.5 : 4}
+                  fill={isFirst ? "#34d399" : "#6ee7b7"}
+                  stroke="white"
+                  strokeWidth="1.5"
+                />
+                {/* 그림자 텍스트 */}
+                <text x={cx} y={cy - 10} textAnchor="middle" fontSize="11" fontWeight="bold" fill="rgba(0,0,0,0.5)" dx="0.5" dy="0.5">{p.temp}°</text>
+                <text x={cx} y={cy - 10} textAnchor="middle" fontSize="11" fontWeight="bold" fill="white">{p.temp}°</text>
+                <text x={cx} y={height + 4} textAnchor="middle" fontSize="10" fontWeight="600" fill="rgba(255,255,255,0.75)">{p.label}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export default function WeatherShelterPage() {
   const router = useRouter();
   
-  const [temp, setTemp] = useState(9);
+  const [temp, setTemp] = useState(0);
   const [pty, setPty] = useState<PTYType>(0);
+  const [humi, setHumi] = useState("--");
+  const [wind, setWind] = useState("--");
+  const [airGrade, setAirGrade] = useState("--");
+  const [loading, setLoading] = useState(true);
   const [showDetail, setShowDetail] = useState(false);
+  const [tomorrowData, setTomorrowData] = useState<any[]>([]);
+  const [tomorrowLoading, setTomorrowLoading] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   
-  // ✅ [추가] 지역구 상태 관리 (초기값: 종로구)
   const [region, setRegion] = useState("종로구");
+  const [showRegionPicker, setShowRegionPicker] = useState(false);
 
+  // ✅ 추가: 4시간 기온 변화 데이터
+  const [chartPoints, setChartPoints] = useState<{ label: string; temp: number }[]>([]);
+
+  // 로그인 유저 정보 + 유저 주소로 지역구 설정
   useEffect(() => {
     const saved = sessionStorage.getItem('userName');
+    const savedUserId = sessionStorage.getItem('userId');
     if (saved) setUserName(saved);
-    
-    // 실제 환경에서는 여기서 GPS나 설정을 통해 '영등포구' 등으로 업데이트 가능합니다.
-    // setRegion("영등포구"); 
+
+    if (savedUserId) {
+      fetch(`${BASE_URL}/user/address?userid=${savedUserId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.address) {
+            const match = data.address.match(/(\S+구)/);
+            if (match) setRegion(match[1]);
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
+
+  // 현재 날씨 API 호출
+  useEffect(() => {
+    const fetchCurrent = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${BASE_URL}/env/current?district=${encodeURIComponent(region)}`);
+        if (!res.ok) throw new Error("API 오류");
+        const data = await res.json();
+        setTemp(Math.round(data.temp ?? 0));
+        setPty((data.pty ?? 0) as PTYType);
+        setHumi(data.humi !== undefined ? `${data.humi}%` : "--");
+        setWind(data.wind !== undefined ? `${data.wind}m/s` : "--");
+        setAirGrade(data.air_grade ?? "--");
+      } catch (e) {
+        console.error("날씨 데이터 불러오기 실패", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCurrent();
+  }, [region]);
+
+  // ✅ 추가: today API로 현재 시간 기준 4시간 기온 변화 가져오기
+  useEffect(() => {
+    const fetchForecast = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/weather/today?district=${encodeURIComponent(region)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const forecasts: any[] = data.forecasts ?? [];
+
+        const now = new Date();
+        const currentHour = now.getHours();
+
+        const target = forecasts
+          .filter((f) => f.fcst_time && f.temp !== undefined)
+          .sort((a, b) => parseInt(a.fcst_time) - parseInt(b.fcst_time))
+          .filter((f) => parseInt(f.fcst_time.slice(0, 2)) >= currentHour)
+          .slice(0, 4);
+
+        if (target.length >= 2) {
+          setChartPoints(
+            target.map((f) => ({
+              label: `${parseInt(f.fcst_time.slice(0, 2))}시`,
+              temp: Math.round(f.temp),
+            }))
+          );
+        }
+      } catch (e) {
+        // 에러 시 차트 미표시
+      }
+    };
+    fetchForecast();
+  }, [region]);
+
+  // 내일 날씨 API 호출 (모달 열릴 때만)
+  useEffect(() => {
+    if (!showDetail) return;
+    const fetchTomorrow = async () => {
+      setTomorrowLoading(true);
+      try {
+        const res = await fetch(`${BASE_URL}/weather/tomorrow?district=${encodeURIComponent(region)}`);
+        if (!res.ok) throw new Error("API 오류");
+        const data = await res.json();
+        setTomorrowData(data.forecasts ?? []);
+      } catch (e) {
+        console.error("내일 날씨 불러오기 실패", e);
+      } finally {
+        setTomorrowLoading(false);
+      }
+    };
+    fetchTomorrow();
+  }, [showDetail, region]);
 
   const handleLogout = () => {
     sessionStorage.removeItem('userName');
+    sessionStorage.removeItem('userId');
     setUserName(null);
   };
 
@@ -106,21 +296,24 @@ export default function WeatherShelterPage() {
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-2">
             <div>
-              <h2 className="text-xl font-bold">{status.title}</h2>
+              <h2 className="text-3xl font-bold">{loading ? "로딩 중..." : status.title}</h2>
               <span className="bg-emerald-500 text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider text-white">Live</span>
             </div>
           </div>
           
-          {/* ✅ [추가] 오른쪽 상단 지역구 표시 디자인 */}
-          <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-sm">
+          <button
+            onClick={() => setShowRegionPicker(true)}
+            className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-sm hover:bg-white/20 transition active:scale-95"
+          >
             <span className="text-[10px]">📍</span>
-            <span className="text-xs font-black tracking-tight text-white/90">{region}</span>
-          </div>
+            <span className="text-sm font-black tracking-tight text-white/90">{region}</span>
+            <span className="text-[10px] text-white/50">▼</span>
+          </button>
         </div>
 
         <div className="mt-8 text-center flex items-center justify-center gap-4">
           <h3 className={`text-7xl font-light tracking-tighter transition-colors duration-500 ${textColor}`}>
-            {temp}<span className="text-4xl ml-1">°C</span>
+            {loading ? "--" : temp}<span className="text-4xl ml-1">°C</span>
           </h3>
           <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md p-2 shadow-inner">
             <img src={status.iconUrl} alt={status.title} className="w-full h-full object-contain" />
@@ -129,14 +322,14 @@ export default function WeatherShelterPage() {
 
         <div className="mt-6 px-4 py-3 bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 transition-all duration-500">
           <p className={`text-center text-sm font-semibold leading-relaxed ${textColor}`}>
-            {status.desc}
+            {loading ? "날씨 정보를 불러오는 중..." : status.desc}
           </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-8">
-          <WeatherInfoItem label="습도" value={pty === 1 ? "90%" : "45%"} icon="💧" />
-          <WeatherInfoItem label="풍속" value={pty === 2 ? "6.5m/s" : "2.1m/s"} icon="🚩" />
-          <WeatherInfoItem label="미세먼지" value="보통" icon="💨" />
+          <WeatherInfoItem label="습도" value={loading ? "--" : humi} icon="💧" />
+          <WeatherInfoItem label="풍속" value={loading ? "--" : wind} icon="🚩" />
+          <WeatherInfoItem label="미세먼지" value={loading ? "--" : airGrade} icon="💨" />
           
           <button 
             onClick={() => setShowDetail(true)} 
@@ -146,6 +339,13 @@ export default function WeatherShelterPage() {
             <div className="text-sm font-bold text-white">내일 날씨 보기</div>
           </button>
         </div>
+
+        {/* ✅ 추가: 꺾은선 그래프 */}
+        {!loading && chartPoints.length >= 2 && (
+          <div className="mt-2 px-1 pt-4 border-t border-white/10">
+            <TempLineChart points={chartPoints} />
+          </div>
+        )}
       </section>
 
       <section className="relative z-10 px-4 mt-2 flex-1 flex flex-col mb-4">
@@ -159,33 +359,101 @@ export default function WeatherShelterPage() {
         </button>
       </section>
 
+      {showRegionPicker && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-white/20 w-full max-w-md rounded-t-3xl p-6 text-white shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-lg font-bold">📍 지역구 선택</h3>
+              <button onClick={() => setShowRegionPicker(false)} className="text-2xl text-white/50 hover:text-white">✕</button>
+            </div>
+            <div className="grid grid-cols-4 gap-2 max-h-72 overflow-y-auto pb-2">
+              {SEOUL_DISTRICTS.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => { setRegion(d); setShowRegionPicker(false); }}
+                  className={`py-2.5 px-1 rounded-xl text-xs font-bold transition active:scale-95 ${
+                    region === d
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-white/10 text-white/80 hover:bg-white/20'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-gray-900 border border-white/20 w-full max-w-sm rounded-3xl p-6 text-white shadow-2xl animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold">내일 날씨 예보</h3>
-              <button onClick={() => setShowDetail(false)} className="text-2xl text-white/50 hover:text-white">✕</button>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-gray-950 border border-white/10 w-full max-w-md rounded-t-3xl text-white shadow-2xl flex flex-col" style={{maxHeight: '85vh'}}>
+            <div className="flex justify-between items-center px-6 pt-6 pb-4 border-b border-white/10 shrink-0">
+              <div>
+                <h3 className="text-2xl font-black">내일 날씨</h3>
+                <p className="text-sm text-white/50 mt-0.5">📍 {region}</p>
+              </div>
+              <button onClick={() => setShowDetail(false)} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-xl text-white/70 hover:bg-white/20">✕</button>
             </div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
-                <span>오전 (09:00)</span>
-                <span className="font-bold text-emerald-400">18°C / 화창</span>
+
+            {tomorrowLoading ? (
+              <div className="text-center py-16 text-white/50 text-lg">불러오는 중...</div>
+            ) : tomorrowData.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-4">📭</div>
+                <div className="text-lg text-white/60">아직 내일 예보가 없습니다</div>
+                <div className="text-sm mt-2 text-white/30">잠시 후 다시 확인해주세요</div>
               </div>
-              <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
-                <span>오후 (14:00)</span>
-                <span className="font-bold text-orange-400">24°C / 흐림</span>
+            ) : (
+              <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2">
+                {tomorrowData
+                  .filter((_, i) => i % 3 === 0)
+                  .map((f, i) => {
+                    const hour = parseInt(f.fcst_time?.slice(0, 2) ?? "0");
+                    const isAM = hour < 12;
+                    const displayHour = hour === 0 ? "자정" : hour === 12 ? "정오" : `${isAM ? "오전" : "오후"} ${isAM ? hour : hour - 12}시`;
+                    const ptyIconUrl = [
+                      "https://raw.githubusercontent.com/basmilius/weather-icons/dev/design/fill/final/clear-day.svg",
+                      "https://raw.githubusercontent.com/basmilius/weather-icons/dev/design/fill/final/rain.svg",
+                      "https://raw.githubusercontent.com/basmilius/weather-icons/dev/design/fill/final/snow.svg",
+                      "https://raw.githubusercontent.com/basmilius/weather-icons/dev/design/fill/final/cloudy.svg",
+                    ][f.pty ?? 0];
+                    const ptyLabel = ["맑음", "비", "눈", "흐림"][f.pty ?? 0] ?? "맑음";
+                    const isWarm = f.temp >= 25;
+                    const isCold = f.temp <= 0;
+                    const tempColor = isWarm ? "text-orange-400" : isCold ? "text-blue-300" : "text-white";
+                    const bgColor = isWarm ? "bg-orange-500/10 border-orange-500/20" : isCold ? "bg-blue-500/10 border-blue-500/20" : "bg-white/5 border-white/10";
+
+                    return (
+                      <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border ${bgColor}`}>
+                        <div className="w-16 shrink-0">
+                          <div className="text-base font-black text-white">{displayHour}</div>
+                        </div>
+                        <div className="w-10 h-10 shrink-0">
+                          <img src={ptyIconUrl} alt={ptyLabel} className="w-full h-full object-contain" />
+                        </div>
+                        <div className="flex-1">
+                          <div className={`text-2xl font-black ${tempColor}`}>{f.temp}°C</div>
+                          <div className="text-sm text-white/50">{ptyLabel}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm font-bold text-sky-300">🌂 {f.pop ?? 0}%</div>
+                          <div className="text-xs text-white/40 mt-0.5">{f.rain ?? "강수없음"}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
-              <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
-                <span>저녁 (20:00)</span>
-                <span className="font-bold text-blue-400">15°C / 맑음</span>
-              </div>
+            )}
+
+            <div className="px-6 pb-6 pt-3 shrink-0">
+              <button
+                onClick={() => setShowDetail(false)}
+                className="w-full py-4 bg-emerald-500 rounded-2xl text-lg font-black active:scale-95 transition"
+              >
+                확인
+              </button>
             </div>
-            <button 
-              onClick={() => setShowDetail(false)}
-              className="w-full mt-8 py-4 bg-emerald-500 rounded-2xl font-bold active:scale-95 transition"
-            >
-              확인
-            </button>
           </div>
         </div>
       )}
